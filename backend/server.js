@@ -2,22 +2,14 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import pool from './db.js';
-import path from 'path';
-import { fileURLToPath } from 'url';
 
 dotenv.config();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
-
-// Serve static frontend files
-app.use(express.static(path.join(__dirname, 'public')));
 
 // Get active users based on time period (days)
 app.get('/api/active-users', async (req, res) => {
@@ -367,6 +359,41 @@ app.post('/api/compliance-queue/:id/update-url', async (req, res) => {
   }
 });
 
+// Update compliance name (translated) for compliance artifact
+app.post('/api/compliance-queue/:id/update-name', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { compliance_name_translated } = req.body;
+
+    const query = `
+      UPDATE queued_compliance_artifacts
+      SET compliance_name_translated = $1
+      WHERE compliance_id = $2
+      RETURNING *
+    `;
+
+    const result = await pool.query(query, [compliance_name_translated, id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Compliance artifact not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Error updating compliance name:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to update compliance name'
+    });
+  }
+});
+
 // Initiate webscrap pipeline
 app.post('/api/initiate-webscrap', async (req, res) => {
   try {
@@ -400,6 +427,12 @@ app.post('/api/initiate-webscrap', async (req, res) => {
 
     for (const item of result.rows) {
       try {
+        // Set status to 'in_progress' before starting
+        await pool.query(
+          `UPDATE queued_compliance_artifacts SET status = 'in_progress' WHERE compliance_id = $1`,
+          [item.compliance_id]
+        );
+
         const payload = {
           certification_name: item.compliance_name_translated || item.compliance_name_origin,
           domain: item.url ? [item.url] : null,
@@ -420,9 +453,9 @@ app.post('/api/initiate-webscrap', async (req, res) => {
         const data = await response.json();
 
         if (response.ok) {
-          // Update status to webscraped
+          // Delete the item after successful webscraping
           await pool.query(
-            `UPDATE queued_compliance_artifacts SET status = 'webscraped' WHERE compliance_id = $1`,
+            `DELETE FROM queued_compliance_artifacts WHERE compliance_id = $1`,
             [item.compliance_id]
           );
 
@@ -432,8 +465,13 @@ app.post('/api/initiate-webscrap', async (req, res) => {
             status: 'success',
             data: data
           });
-          console.log(`✓ Successfully scraped: ${payload.certification_name}`);
+          console.log(`✓ Successfully scraped and removed: ${payload.certification_name}`);
         } else {
+          // Revert status back to 'approved' if scraping failed
+          await pool.query(
+            `UPDATE queued_compliance_artifacts SET status = 'approved' WHERE compliance_id = $1`,
+            [item.compliance_id]
+          );
           errors.push({
             compliance_id: item.compliance_id,
             name: payload.certification_name,
@@ -442,6 +480,11 @@ app.post('/api/initiate-webscrap', async (req, res) => {
           console.error(`✗ Failed to scrape: ${payload.certification_name}`, data);
         }
       } catch (err) {
+        // Revert status back to 'approved' if an exception occurred
+        await pool.query(
+          `UPDATE queued_compliance_artifacts SET status = 'approved' WHERE compliance_id = $1`,
+          [item.compliance_id]
+        );
         errors.push({
           compliance_id: item.compliance_id,
           name: item.compliance_name_translated || item.compliance_name_origin,
@@ -472,15 +515,6 @@ app.post('/api/initiate-webscrap', async (req, res) => {
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ success: true, message: 'Server is running' });
-});
-
-// Serve frontend for all non-API routes (SPA support)
-app.get('*', (req, res) => {
-  // Don't serve index.html for API routes
-  if (req.path.startsWith('/api/')) {
-    return res.status(404).json({ error: 'API endpoint not found' });
-  }
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.listen(PORT, () => {

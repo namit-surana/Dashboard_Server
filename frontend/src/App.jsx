@@ -16,7 +16,9 @@ function App() {
   const [activeTab, setActiveTab] = useState('users'); // 'users', 'feedback', or 'compliance'
   const [editingUrl, setEditingUrl] = useState(null); // Track which URL is being edited
   const [editedUrlValue, setEditedUrlValue] = useState(''); // Track the edited URL value
-  const [complianceStatusFilter, setComplianceStatusFilter] = useState('all'); // 'all', 'pending', 'approved', 'webscraped'
+  const [editingComplianceName, setEditingComplianceName] = useState(null); // Track which compliance name is being edited
+  const [editedComplianceNameValue, setEditedComplianceNameValue] = useState(''); // Track the edited compliance name value
+  const [complianceStatusFilter, setComplianceStatusFilter] = useState('all'); // 'all', 'pending', 'approved', 'in_progress'
   const [showWebscrapConfirm, setShowWebscrapConfirm] = useState(false); // Show confirmation dialog
 
   useEffect(() => {
@@ -156,6 +158,43 @@ function App() {
   const handleCancelEdit = () => {
     setEditingUrl(null);
     setEditedUrlValue('');
+  };
+
+  const handleEditComplianceName = (complianceId, currentName) => {
+    setEditingComplianceName(complianceId);
+    setEditedComplianceNameValue(currentName || '');
+  };
+
+  const handleSaveComplianceName = async (complianceId) => {
+    try {
+      const response = await fetch(`${API_URL}/compliance-queue/${complianceId}/update-name`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ compliance_name_translated: editedComplianceNameValue }),
+      });
+      const data = await response.json();
+
+      if (data.success) {
+        // Update the local state
+        setComplianceQueue(complianceQueue.map(item =>
+          item.compliance_id === complianceId ? { ...item, compliance_name_translated: editedComplianceNameValue } : item
+        ));
+        setEditingComplianceName(null);
+        setEditedComplianceNameValue('');
+      } else {
+        alert('Failed to update compliance name: ' + data.error);
+      }
+    } catch (err) {
+      console.error('Error updating compliance name:', err);
+      alert('Error updating compliance name');
+    }
+  };
+
+  const handleCancelComplianceNameEdit = () => {
+    setEditingComplianceName(null);
+    setEditedComplianceNameValue('');
   };
 
   const handleInitiateWebscrap = () => {
@@ -421,7 +460,7 @@ function App() {
                   <option value="all">All Status</option>
                   <option value="pending">Pending Only</option>
                   <option value="approved">Approved Only</option>
-                  <option value="webscraped">Webscraped Only</option>
+                  <option value="in_progress">In Progress Only</option>
                 </select>
               </div>
               <div className="flex space-x-4 text-sm">
@@ -443,10 +482,10 @@ function App() {
                 </div>
                 <div className="flex items-center">
                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 mr-2">
-                    Webscraped
+                    In Progress
                   </span>
                   <span className="text-gray-600">
-                    {complianceQueue.filter(item => item.status === 'webscraped').length}
+                    {complianceQueue.filter(item => item.status === 'in_progress').length}
                   </span>
                 </div>
               </div>
@@ -485,7 +524,39 @@ function App() {
                           <div className="text-sm text-gray-900">{item.compliance_name_origin || 'N/A'}</div>
                         </td>
                         <td className="px-6 py-4">
-                          <div className="text-sm text-gray-900">{item.compliance_name_translated || 'N/A'}</div>
+                          {editingComplianceName === item.compliance_id ? (
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="text"
+                                value={editedComplianceNameValue}
+                                onChange={(e) => setEditedComplianceNameValue(e.target.value)}
+                                className="flex-1 border border-gray-300 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder="Enter compliance name"
+                              />
+                              <button
+                                onClick={() => handleSaveComplianceName(item.compliance_id)}
+                                className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={handleCancelComplianceNameEdit}
+                                className="inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center space-x-2">
+                              <div className="text-sm text-gray-900">{item.compliance_name_translated || 'N/A'}</div>
+                              <button
+                                onClick={() => handleEditComplianceName(item.compliance_id, item.compliance_name_translated)}
+                                className="text-xs text-gray-500 hover:text-gray-700"
+                              >
+                                ✏️
+                              </button>
+                            </div>
+                          )}
                         </td>
                         <td className="px-6 py-4">
                           {editingUrl === item.compliance_id ? (
@@ -538,9 +609,9 @@ function App() {
                             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                               Approved
                             </span>
-                          ) : item.status === 'webscraped' ? (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                              Webscraped
+                          ) : item.status === 'in_progress' ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 animate-pulse">
+                              In Progress
                             </span>
                           ) : item.status === 'disapproved' ? (
                             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
@@ -561,9 +632,13 @@ function App() {
                               >
                                 Revert to Pending
                               </button>
-                            ) : item.status === 'webscraped' ? (
-                              <span className="text-xs text-gray-500">
-                                Completed
+                            ) : item.status === 'in_progress' ? (
+                              <span className="text-xs text-gray-500 flex items-center">
+                                <svg className="animate-spin h-4 w-4 mr-2 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Processing...
                               </span>
                             ) : (
                               <>
@@ -593,7 +668,7 @@ function App() {
                 <div className="text-gray-500">
                   {complianceStatusFilter === 'all'
                     ? 'No compliance artifacts in queue'
-                    : `No ${complianceStatusFilter} compliance artifacts`
+                    : `No ${complianceStatusFilter === 'in_progress' ? 'in progress' : complianceStatusFilter} compliance artifacts`
                   }
                 </div>
               </div>
