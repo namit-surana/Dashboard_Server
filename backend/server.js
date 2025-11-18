@@ -88,6 +88,16 @@ app.get('/api/stats', async (req, res) => {
     `;
     const totalMessagesResult = await pool.query(totalMessagesQuery);
 
+    // Message type counts (text-low and text-minimal only)
+    const messageTypeCountsQuery = `
+      SELECT type, COUNT(*) as count
+      FROM chat_messages
+      WHERE timestamp >= NOW() - INTERVAL '${days} days'
+        AND type IN ('text-low', 'text-minimal')
+      GROUP BY type
+    `;
+    const messageTypeCountsResult = await pool.query(messageTypeCountsQuery);
+
     // Active users count
     const activeUsersQuery = `
       SELECT COUNT(DISTINCT u.user_id) as total
@@ -130,6 +140,12 @@ app.get('/api/stats', async (req, res) => {
     const negativeFeedback = parseInt(negativeFeedbackResult.rows[0].total);
     const positiveRate = totalFeedback > 0 ? Math.round((positiveFeedback / totalFeedback) * 100) : 0;
 
+    // Format message type counts
+    const messageTypeCounts = messageTypeCountsResult.rows.reduce((acc, row) => {
+      acc[row.type] = parseInt(row.count);
+      return acc;
+    }, {});
+
     res.json({
       success: true,
       data: {
@@ -137,6 +153,7 @@ app.get('/api/stats', async (req, res) => {
         activeUsers: parseInt(activeUsersResult.rows[0].total),
         activeSessions: parseInt(activeSessionsResult.rows[0].total),
         totalMessages: parseInt(totalMessagesResult.rows[0].total),
+        messageTypeCounts: messageTypeCounts,
         totalFeedback: totalFeedback,
         positiveFeedback: positiveFeedback,
         negativeFeedback: negativeFeedback,

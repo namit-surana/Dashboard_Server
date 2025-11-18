@@ -308,6 +308,30 @@ function App() {
                 <div className="text-sm font-medium text-gray-500">Total Messages</div>
                 <div className="text-3xl font-bold text-purple-600 mt-2">{stats.totalMessages}</div>
                 <div className="text-xs text-gray-500 mt-1">{getTimePeriodText()}</div>
+                {stats.messageTypeCounts && (
+                  <div className="mt-3 pt-3 border-t border-gray-200">
+                    <div className="text-xs text-gray-600 space-y-1">
+                      <div className="flex justify-between">
+                        <span>text-low:</span>
+                        <span>
+                          {stats.messageTypeCounts['text-low'] || 0} (
+                          {stats.totalMessages > 0
+                            ? ((stats.messageTypeCounts['text-low'] || 0) / stats.totalMessages * 100).toFixed(4)
+                            : '0.0000'}%)
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>text-minimal:</span>
+                        <span>
+                          {stats.messageTypeCounts['text-minimal'] || 0} (
+                          {stats.totalMessages > 0
+                            ? ((stats.messageTypeCounts['text-minimal'] || 0) / stats.totalMessages * 100).toFixed(4)
+                            : '0.0000'}%)
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
