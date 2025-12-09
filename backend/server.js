@@ -36,7 +36,8 @@ app.get('/api/active-users', async (req, res) => {
           MAX(cs.created_at),
           MAX(cs.updated_at),
           MAX(cm.timestamp)
-        ) as last_activity
+        ) as last_activity,
+        COUNT(DISTINCT cm.message_id) FILTER (WHERE cm.timestamp >= NOW() - INTERVAL '${days} days') as message_count
       FROM users u
       LEFT JOIN chat_sessions cs ON u.user_id = cs.user_id
       LEFT JOIN chat_messages cm ON cs.session_id = cm.session_id
