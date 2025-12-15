@@ -22,6 +22,7 @@ function App() {
   const [editedComplianceNameValue, setEditedComplianceNameValue] = useState(''); // Track the edited compliance name value
   const [complianceStatusFilter, setComplianceStatusFilter] = useState('all'); // 'all', 'pending', 'approved', 'in_progress'
   const [showWebscrapConfirm, setShowWebscrapConfirm] = useState(false); // Show confirmation dialog
+  const [userBalanceSortConfig, setUserBalanceSortConfig] = useState({ key: null, direction: 'desc' }); // Sorting for User Balance table
 
   useEffect(() => {
     fetchData();
@@ -267,6 +268,31 @@ function App() {
     }
   };
 
+  const handleUserBalanceSort = (key) => {
+    let direction = 'desc';
+    if (userBalanceSortConfig.key === key && userBalanceSortConfig.direction === 'desc') {
+      direction = 'asc';
+    }
+    setUserBalanceSortConfig({ key, direction });
+  };
+
+  const getSortedUserBalances = (balances) => {
+    if (!userBalanceSortConfig.key) return balances;
+
+    const sorted = [...balances].sort((a, b) => {
+      const aValue = parseFloat(a[userBalanceSortConfig.key]) || 0;
+      const bValue = parseFloat(b[userBalanceSortConfig.key]) || 0;
+
+      if (userBalanceSortConfig.direction === 'asc') {
+        return aValue - bValue;
+      } else {
+        return bValue - aValue;
+      }
+    });
+
+    return sorted;
+  };
+
   return (
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
@@ -289,19 +315,29 @@ function App() {
 
       <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
         {/* Time Period Filter */}
-        <div className="mb-6">
-          <label className="text-sm font-medium text-gray-700 mr-3">Time Period:</label>
-          <select
-            value={timePeriod}
-            onChange={(e) => setTimePeriod(Number(e.target.value))}
-            className="border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value={1}>Last 24 hours</option>
-            <option value={7}>Last 7 days</option>
-            <option value={30}>Last 30 days</option>
-            <option value={90}>Last 90 days</option>
-            <option value={0}>All Time</option>
-          </select>
+        <div className="mb-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-lg p-4 shadow-md">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <label className="text-base font-semibold text-gray-800">Time Period Filter:</label>
+            </div>
+            <select
+              value={timePeriod}
+              onChange={(e) => setTimePeriod(Number(e.target.value))}
+              className="border-2 border-blue-300 bg-white rounded-lg px-4 py-2.5 text-base font-medium text-gray-900 focus:outline-none focus:ring-3 focus:ring-blue-500 focus:border-blue-500 shadow-sm hover:border-blue-400 cursor-pointer transition-colors"
+            >
+              <option value={1}>📅 Last 24 hours</option>
+              <option value={7}>📅 Last 7 days</option>
+              <option value={30}>📅 Last 30 days</option>
+              <option value={90}>📅 Last 90 days</option>
+              <option value={0}>🌐 All Time</option>
+            </select>
+          </div>
+          <div className="mt-2 text-sm text-blue-700 font-medium">
+            Currently viewing: <span className="font-bold">{getTimePeriodText()}</span>
+          </div>
         </div>
 
         {/* Loading State */}
@@ -991,8 +1027,8 @@ function App() {
                     }))}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="date" angle={-45} textAnchor="end" height={80} />
-                      <YAxis yAxisId="left" />
-                      <YAxis yAxisId="right" orientation="right" />
+                      <YAxis yAxisId="left" label={{ value: 'Transactions', angle: -90, position: 'insideLeft' }} />
+                      <YAxis yAxisId="right" orientation="right" label={{ value: 'USD ($)', angle: 90, position: 'insideRight' }} />
                       <Tooltip
                         formatter={(value, name) => {
                           if (name === 'Total Spent ($)') return `$${parseFloat(value).toFixed(2)}`;
@@ -1007,15 +1043,6 @@ function App() {
                         stroke="#8b5cf6"
                         strokeWidth={2}
                         name="Transactions"
-                        dot={{ r: 4 }}
-                      />
-                      <Line
-                        yAxisId="left"
-                        type="monotone"
-                        dataKey="unique_users"
-                        stroke="#3b82f6"
-                        strokeWidth={2}
-                        name="Unique Users"
                         dot={{ r: 4 }}
                       />
                       <Line
@@ -1047,8 +1074,8 @@ function App() {
                     }))}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="date" angle={-45} textAnchor="end" height={80} />
-                      <YAxis yAxisId="left" />
-                      <YAxis yAxisId="right" orientation="right" />
+                      <YAxis yAxisId="left" label={{ value: 'Transactions', angle: -90, position: 'insideLeft' }} />
+                      <YAxis yAxisId="right" orientation="right" label={{ value: 'USD ($)', angle: 90, position: 'insideRight' }} />
                       <Tooltip
                         formatter={(value, name) => {
                           if (name === 'Total Spent ($)') return `$${parseFloat(value).toFixed(2)}`;
@@ -1063,15 +1090,6 @@ function App() {
                         stroke="#f59e0b"
                         strokeWidth={2}
                         name="Transactions"
-                        dot={{ r: 4 }}
-                      />
-                      <Line
-                        yAxisId="left"
-                        type="monotone"
-                        dataKey="unique_users"
-                        stroke="#3b82f6"
-                        strokeWidth={2}
-                        name="Unique Users"
                         dot={{ r: 4 }}
                       />
                       <Line
@@ -1174,12 +1192,12 @@ function App() {
 
             {/* User Balance Table */}
             <div className="bg-white rounded-lg shadow overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
+              <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-purple-50 to-pink-50">
                 <h2 className="text-xl font-semibold text-gray-800">User Balance Summary</h2>
               </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+                  <thead className="bg-gradient-to-r from-gray-100 to-gray-50">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         User
@@ -1187,17 +1205,77 @@ function App() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Company
                       </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Balance ($)
+                      <th
+                        className={`px-6 py-3 text-right text-xs font-bold uppercase tracking-wider cursor-pointer transition-all ${
+                          userBalanceSortConfig.key === 'balance_usd'
+                            ? 'bg-blue-100 text-blue-700 border-2 border-blue-400'
+                            : 'bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 hover:border-blue-300'
+                        }`}
+                        onClick={() => handleUserBalanceSort('balance_usd')}
+                      >
+                        <div className="flex items-center justify-end space-x-2">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                          </svg>
+                          <span>Balance ($)</span>
+                          {userBalanceSortConfig.key === 'balance_usd' && (
+                            <span className="text-base font-bold">{userBalanceSortConfig.direction === 'desc' ? '▼' : '▲'}</span>
+                          )}
+                        </div>
                       </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Spent ($)
+                      <th
+                        className={`px-6 py-3 text-right text-xs font-bold uppercase tracking-wider cursor-pointer transition-all ${
+                          userBalanceSortConfig.key === 'total_usd_spent'
+                            ? 'bg-red-100 text-red-700 border-2 border-red-400'
+                            : 'bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 hover:border-red-300'
+                        }`}
+                        onClick={() => handleUserBalanceSort('total_usd_spent')}
+                      >
+                        <div className="flex items-center justify-end space-x-2">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                          </svg>
+                          <span>Spent ($)</span>
+                          {userBalanceSortConfig.key === 'total_usd_spent' && (
+                            <span className="text-base font-bold">{userBalanceSortConfig.direction === 'desc' ? '▼' : '▲'}</span>
+                          )}
+                        </div>
                       </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Topped Up ($)
+                      <th
+                        className={`px-6 py-3 text-right text-xs font-bold uppercase tracking-wider cursor-pointer transition-all ${
+                          userBalanceSortConfig.key === 'total_usd_topped_up'
+                            ? 'bg-green-100 text-green-700 border-2 border-green-400'
+                            : 'bg-green-50 text-green-600 border border-green-200 hover:bg-green-100 hover:border-green-300'
+                        }`}
+                        onClick={() => handleUserBalanceSort('total_usd_topped_up')}
+                      >
+                        <div className="flex items-center justify-end space-x-2">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                          </svg>
+                          <span>Topped Up ($)</span>
+                          {userBalanceSortConfig.key === 'total_usd_topped_up' && (
+                            <span className="text-base font-bold">{userBalanceSortConfig.direction === 'desc' ? '▼' : '▲'}</span>
+                          )}
+                        </div>
                       </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Transactions
+                      <th
+                        className={`px-6 py-3 text-right text-xs font-bold uppercase tracking-wider cursor-pointer transition-all ${
+                          userBalanceSortConfig.key === 'total_transactions'
+                            ? 'bg-purple-100 text-purple-700 border-2 border-purple-400'
+                            : 'bg-purple-50 text-purple-600 border border-purple-200 hover:bg-purple-100 hover:border-purple-300'
+                        }`}
+                        onClick={() => handleUserBalanceSort('total_transactions')}
+                      >
+                        <div className="flex items-center justify-end space-x-2">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                          </svg>
+                          <span>Transactions</span>
+                          {userBalanceSortConfig.key === 'total_transactions' && (
+                            <span className="text-base font-bold">{userBalanceSortConfig.direction === 'desc' ? '▼' : '▲'}</span>
+                          )}
+                        </div>
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Last Transaction
@@ -1206,9 +1284,9 @@ function App() {
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {analytics.userBalances && analytics.userBalances.length > 0 ? (
-                      analytics.userBalances
-                        .filter(user => parseInt(user.total_transactions) > 0)
-                        .map((user, index) => (
+                      getSortedUserBalances(
+                        analytics.userBalances.filter(user => parseInt(user.total_transactions) > 0)
+                      ).map((user, index) => (
                           <tr key={index} className="hover:bg-gray-50">
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="text-sm font-medium text-gray-900">
