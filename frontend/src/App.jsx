@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 // Always use relative URL since backend serves frontend
 const API_URL = '/api';
@@ -253,21 +252,6 @@ function App() {
     return `Last ${timePeriod} days`;
   };
 
-  const formatChartDate = (dateString) => {
-    const date = new Date(dateString);
-
-    if (timePeriod === 0) {
-      // All Time: Show "Dec 2024"
-      return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-    } else if (timePeriod >= 90) {
-      // 90+ days: Show "12/15"
-      return date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
-    } else {
-      // 7, 30 days: Show "Dec 15"
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    }
-  };
-
   const handleUserBalanceSort = (key) => {
     let direction = 'desc';
     if (userBalanceSortConfig.key === key && userBalanceSortConfig.direction === 'desc') {
@@ -355,7 +339,7 @@ function App() {
         )}
 
         {/* Stats Cards Row 1 */}
-        {!loading && stats && (
+        {!loading && stats && analytics && (
           <>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
               <div className="bg-white rounded-lg shadow p-6">
@@ -370,48 +354,44 @@ function App() {
               </div>
 
               <div className="bg-white rounded-lg shadow p-6">
-                <div className="text-sm font-medium text-gray-500">Active Sessions</div>
-                <div className="text-3xl font-bold text-green-600 mt-2">{stats.activeSessions}</div>
+                <div className="text-sm font-medium text-gray-500">Total File Generation</div>
+                <div className="text-3xl font-bold text-orange-600 mt-2">
+                  {analytics.fileGenStats?.filegen_transaction_count || 0}
+                </div>
                 <div className="text-xs text-gray-500 mt-1">{getTimePeriodText()}</div>
               </div>
 
               <div className="bg-white rounded-lg shadow p-6">
-                <div className="text-sm font-medium text-gray-500">Total Messages</div>
-                <div className="text-3xl font-bold text-purple-600 mt-2">{stats.totalMessages}</div>
+                <div className="text-sm font-medium text-gray-500">Total Chatbot Usage</div>
+                <div className="text-3xl font-bold text-purple-600 mt-2">
+                  {analytics.chatbotStats?.chatbot_transaction_count || 0}
+                </div>
                 <div className="text-xs text-gray-500 mt-1">{getTimePeriodText()}</div>
-                {stats.messageTypeCounts && (
-                  <div className="mt-3 pt-3 border-t border-gray-200">
-                    <div className="text-xs text-gray-600 space-y-1">
-                      <div className="flex justify-between">
-                        <span>text-low:</span>
-                        <span>
-                          {stats.messageTypeCounts['text-low'] || 0} (
-                          {stats.totalMessages > 0
-                            ? ((stats.messageTypeCounts['text-low'] || 0) / stats.totalMessages * 100).toFixed(4)
-                            : '0.0000'}%)
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>text-minimal:</span>
-                        <span>
-                          {stats.messageTypeCounts['text-minimal'] || 0} (
-                          {stats.totalMessages > 0
-                            ? ((stats.messageTypeCounts['text-minimal'] || 0) / stats.totalMessages * 100).toFixed(4)
-                            : '0.0000'}%)
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
 
             {/* Stats Cards Row 2 - Feedback */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
               <div className="bg-white rounded-lg shadow p-6">
-                <div className="text-sm font-medium text-gray-500">Total Feedback</div>
-                <div className="text-3xl font-bold text-gray-900 mt-2">{stats.totalFeedback}</div>
+                <div className="text-sm font-medium text-gray-500">Total Messages</div>
+                <div className="text-3xl font-bold text-indigo-600 mt-2">{stats.totalMessages}</div>
                 <div className="text-xs text-gray-500 mt-1">{getTimePeriodText()}</div>
+                {stats.messageTypeCounts && stats.totalMessages > 0 && (
+                  <div className="mt-3 pt-3 border-t border-gray-200 space-y-1">
+                    {stats.messageTypeCounts['text-low'] && (
+                      <div className="text-xs text-gray-600">
+                        text-low: <span className="font-medium">{stats.messageTypeCounts['text-low']}</span>
+                        <span className="text-gray-400"> ({((stats.messageTypeCounts['text-low'] / stats.totalMessages) * 100).toFixed(4)}%)</span>
+                      </div>
+                    )}
+                    {stats.messageTypeCounts['text-minimal'] && (
+                      <div className="text-xs text-gray-600">
+                        text-minimal: <span className="font-medium">{stats.messageTypeCounts['text-minimal']}</span>
+                        <span className="text-gray-400"> ({((stats.messageTypeCounts['text-minimal'] / stats.totalMessages) * 100).toFixed(4)}%)</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="bg-white rounded-lg shadow p-6">
@@ -1011,103 +991,6 @@ function App() {
                     : '0.00'}
                 </div>
                 <div className="text-xs text-gray-500 mt-1">Per transaction</div>
-              </div>
-            </div>
-
-            {/* Time-Series Charts Row */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Chatbot Usage Over Time */}
-              <div className="bg-white rounded-lg shadow p-6">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">Chatbot Usage Over Time</h3>
-                {analytics.chatbotTimeSeries && analytics.chatbotTimeSeries.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={300}>
-                    <LineChart data={analytics.chatbotTimeSeries.map(item => ({
-                      ...item,
-                      date: formatChartDate(item.date)
-                    }))}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="date" angle={-45} textAnchor="end" height={80} />
-                      <YAxis yAxisId="left" label={{ value: 'Transactions', angle: -90, position: 'insideLeft' }} />
-                      <YAxis yAxisId="right" orientation="right" label={{ value: 'USD ($)', angle: 90, position: 'insideRight' }} />
-                      <Tooltip
-                        formatter={(value, name) => {
-                          if (name === 'Total Spent ($)') return `$${parseFloat(value).toFixed(2)}`;
-                          return value;
-                        }}
-                      />
-                      <Legend />
-                      <Line
-                        yAxisId="left"
-                        type="monotone"
-                        dataKey="transaction_count"
-                        stroke="#8b5cf6"
-                        strokeWidth={2}
-                        name="Transactions"
-                        dot={{ r: 4 }}
-                      />
-                      <Line
-                        yAxisId="right"
-                        type="monotone"
-                        dataKey="total_usd"
-                        stroke="#10b981"
-                        strokeWidth={2}
-                        name="Total Spent ($)"
-                        dot={{ r: 4 }}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="h-[300px] flex items-center justify-center text-gray-500">
-                    No chatbot usage data available
-                  </div>
-                )}
-              </div>
-
-              {/* File Generation Over Time */}
-              <div className="bg-white rounded-lg shadow p-6">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">File Generation Over Time</h3>
-                {analytics.serviceTimeSeries && analytics.serviceTimeSeries.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={300}>
-                    <LineChart data={analytics.serviceTimeSeries.map(item => ({
-                      ...item,
-                      date: formatChartDate(item.date)
-                    }))}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="date" angle={-45} textAnchor="end" height={80} />
-                      <YAxis yAxisId="left" label={{ value: 'Transactions', angle: -90, position: 'insideLeft' }} />
-                      <YAxis yAxisId="right" orientation="right" label={{ value: 'USD ($)', angle: 90, position: 'insideRight' }} />
-                      <Tooltip
-                        formatter={(value, name) => {
-                          if (name === 'Total Spent ($)') return `$${parseFloat(value).toFixed(2)}`;
-                          return value;
-                        }}
-                      />
-                      <Legend />
-                      <Line
-                        yAxisId="left"
-                        type="monotone"
-                        dataKey="transaction_count"
-                        stroke="#f59e0b"
-                        strokeWidth={2}
-                        name="Transactions"
-                        dot={{ r: 4 }}
-                      />
-                      <Line
-                        yAxisId="right"
-                        type="monotone"
-                        dataKey="total_usd"
-                        stroke="#10b981"
-                        strokeWidth={2}
-                        name="Total Spent ($)"
-                        dot={{ r: 4 }}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="h-[300px] flex items-center justify-center text-gray-500">
-                    No file generation data available
-                  </div>
-                )}
               </div>
             </div>
 

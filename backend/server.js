@@ -171,6 +171,62 @@ app.get('/api/stats', async (req, res) => {
   }
 });
 
+// Get active users over time
+app.get('/api/active-users-timeline', async (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 30;
+    const dateFilter = days > 0 ? `AND occurred_at >= NOW() - INTERVAL '${days} days'` : '';
+
+    // Active users over time for chatbot service
+    const chatbotActiveUsersQuery = `
+      SELECT
+        DATE(occurred_at) as date,
+        COUNT(DISTINCT account_id) as active_users
+      FROM account_transactions
+      WHERE txn_type = 'chatbot_service'
+        AND db_cr_flag = 1
+        ${dateFilter}
+      GROUP BY DATE(occurred_at)
+      ORDER BY date ASC
+    `;
+    const chatbotActiveUsersResult = await pool.query(chatbotActiveUsersQuery);
+
+    // Active users over time for file generation (service_purchase)
+    const fileGenActiveUsersQuery = `
+      SELECT
+        DATE(occurred_at) as date,
+        COUNT(DISTINCT account_id) as active_users
+      FROM account_transactions
+      WHERE txn_type = 'service_purchase'
+        AND db_cr_flag = 1
+        ${dateFilter}
+      GROUP BY DATE(occurred_at)
+      ORDER BY date ASC
+    `;
+    const fileGenActiveUsersResult = await pool.query(fileGenActiveUsersQuery);
+
+    console.log('🔍 Active Users Timeline - Chatbot:', chatbotActiveUsersResult.rows.length, 'rows');
+    console.log('🔍 Active Users Timeline - FileGen:', fileGenActiveUsersResult.rows.length, 'rows');
+    console.log('Sample chatbot data:', chatbotActiveUsersResult.rows.slice(0, 3));
+    console.log('Sample fileGen data:', fileGenActiveUsersResult.rows.slice(0, 3));
+
+    res.json({
+      success: true,
+      data: {
+        chatbotActiveUsers: chatbotActiveUsersResult.rows,
+        fileGenActiveUsers: fileGenActiveUsersResult.rows,
+        period: days === 0 ? 'All Time' : `${days} days`
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching active users timeline:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch active users timeline'
+    });
+  }
+});
+
 // Get feedback list with user details
 app.get('/api/feedbacks', async (req, res) => {
   try {
@@ -612,6 +668,20 @@ app.get('/api/service-analytics', async (req, res) => {
     `;
     const chatbotStatsResult = await pool.query(chatbotStatsQuery);
 
+    // File generation specific stats - Convert credits to USD (1 credit = $0.01)
+    const fileGenStatsQuery = `
+      SELECT
+        COUNT(*) as filegen_transaction_count,
+        COUNT(DISTINCT account_id) as filegen_unique_users,
+        ROUND(SUM(amount) / 100.0, 2) as filegen_total_usd,
+        ROUND(AVG(amount) / 100.0, 2) as filegen_avg_usd
+      FROM account_transactions
+      WHERE txn_type = 'service_purchase'
+        AND db_cr_flag = 1
+        ${dateFilter}
+    `;
+    const fileGenStatsResult = await pool.query(fileGenStatsQuery);
+
     // User balance summary - Convert credits to USD (1 credit = $0.01)
     const userBalanceQuery = `
       SELECT
@@ -636,37 +706,7 @@ app.get('/api/service-analytics', async (req, res) => {
     `;
     const userBalanceResult = await pool.query(userBalanceQuery);
 
-    // Daily time-series data for chatbot usage
-    const chatbotTimeSeriesQuery = `
-      SELECT
-        DATE(occurred_at) as date,
-        COUNT(*) as transaction_count,
-        COUNT(DISTINCT account_id) as unique_users,
-        ROUND(SUM(amount) / 100.0, 2) as total_usd
-      FROM account_transactions
-      WHERE txn_type = 'chatbot_service'
-        AND db_cr_flag = 1
-        ${dateFilter}
-      GROUP BY DATE(occurred_at)
-      ORDER BY date ASC
-    `;
-    const chatbotTimeSeriesResult = await pool.query(chatbotTimeSeriesQuery);
-
-    // Daily time-series data for service purchases (file generation)
-    const serviceTimeSeriesQuery = `
-      SELECT
-        DATE(occurred_at) as date,
-        COUNT(*) as transaction_count,
-        COUNT(DISTINCT account_id) as unique_users,
-        ROUND(SUM(amount) / 100.0, 2) as total_usd
-      FROM account_transactions
-      WHERE txn_type = 'service_purchase'
-        AND db_cr_flag = 1
-        ${dateFilter}
-      GROUP BY DATE(occurred_at)
-      ORDER BY date ASC
-    `;
-    const serviceTimeSeriesResult = await pool.query(serviceTimeSeriesQuery);
+    console.log('🔍 Chatbot Stats:', chatbotStatsResult.rows[0]);
 
     res.json({
       success: true,
@@ -675,9 +715,8 @@ app.get('/api/service-analytics', async (req, res) => {
         topUps: topUpResult.rows,
         summary: summaryResult.rows[0],
         chatbotStats: chatbotStatsResult.rows[0],
+        fileGenStats: fileGenStatsResult.rows[0],
         userBalances: userBalanceResult.rows,
-        chatbotTimeSeries: chatbotTimeSeriesResult.rows,
-        serviceTimeSeries: serviceTimeSeriesResult.rows,
         period: days === 0 ? 'All Time' : `${days} days`
       }
     });
