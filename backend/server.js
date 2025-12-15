@@ -676,7 +676,7 @@ app.get('/api/service-analytics', async (req, res) => {
         ROUND(SUM(amount) / 100.0, 2) as filegen_total_usd,
         ROUND(AVG(amount) / 100.0, 2) as filegen_avg_usd
       FROM account_transactions
-      WHERE txn_type = 'service_purchase'
+      WHERE txn_type = 'file_gen'
         AND db_cr_flag = 1
         ${dateFilter}
     `;
