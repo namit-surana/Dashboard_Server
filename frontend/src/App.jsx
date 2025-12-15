@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 // Always use relative URL since backend serves frontend
 const API_URL = '/api';
@@ -8,12 +9,13 @@ function App() {
   const [feedbacks, setFeedbacks] = useState([]);
   const [complianceQueue, setComplianceQueue] = useState([]);
   const [stats, setStats] = useState(null);
+  const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [timePeriod, setTimePeriod] = useState(30);
   const [feedbackFilter, setFeedbackFilter] = useState('all');
   const [expandedFeedback, setExpandedFeedback] = useState(null);
-  const [activeTab, setActiveTab] = useState('users'); // 'users', 'feedback', or 'compliance'
+  const [activeTab, setActiveTab] = useState('users'); // 'users', 'feedback', 'compliance', or 'analytics'
   const [editingUrl, setEditingUrl] = useState(null); // Track which URL is being edited
   const [editedUrlValue, setEditedUrlValue] = useState(''); // Track the edited URL value
   const [editingComplianceName, setEditingComplianceName] = useState(null); // Track which compliance name is being edited
@@ -46,11 +48,16 @@ function App() {
       const complianceResponse = await fetch(`${API_URL}/compliance-queue`);
       const complianceData = await complianceResponse.json();
 
-      if (usersData.success && statsData.success && feedbacksData.success && complianceData.success) {
+      // Fetch service analytics
+      const analyticsResponse = await fetch(`${API_URL}/service-analytics?days=${timePeriod}`);
+      const analyticsData = await analyticsResponse.json();
+
+      if (usersData.success && statsData.success && feedbacksData.success && complianceData.success && analyticsData.success) {
         setActiveUsers(usersData.data);
         setStats(statsData.data);
         setFeedbacks(feedbacksData.data);
         setComplianceQueue(complianceData.data);
+        setAnalytics(analyticsData.data);
       } else {
         setError('Failed to fetch data');
       }
@@ -240,16 +247,43 @@ function App() {
   };
 
   const getTimePeriodText = () => {
+    if (timePeriod === 0) return 'All Time';
     if (timePeriod === 1) return 'Last 24 hours';
     return `Last ${timePeriod} days`;
+  };
+
+  const formatChartDate = (dateString) => {
+    const date = new Date(dateString);
+
+    if (timePeriod === 0) {
+      // All Time: Show "Dec 2024"
+      return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    } else if (timePeriod >= 90) {
+      // 90+ days: Show "12/15"
+      return date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
+    } else {
+      // 7, 30 days: Show "Dec 15"
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    }
   };
 
   return (
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
       <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8 flex justify-between items-center">
           <h1 className="text-3xl font-bold text-gray-900"> Dashboard</h1>
+          <a
+            href="https://stats.uptimerobot.com/Px7I3l9PNG"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+          >
+            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            API Health Status
+          </a>
         </div>
       </header>
 
@@ -266,6 +300,7 @@ function App() {
             <option value={7}>Last 7 days</option>
             <option value={30}>Last 30 days</option>
             <option value={90}>Last 90 days</option>
+            <option value={0}>All Time</option>
           </select>
         </div>
 
@@ -402,6 +437,16 @@ function App() {
                   } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors`}
                 >
                   Compliance Queue ({complianceQueue.length})
+                </button>
+                <button
+                  onClick={() => setActiveTab('analytics')}
+                  className={`${
+                    activeTab === 'analytics'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors`}
+                >
+                  Service Analytics
                 </button>
               </nav>
             </div>
@@ -889,6 +934,397 @@ function App() {
                   <div className="text-gray-500">No feedback found in the last {timePeriod} {timePeriod === 1 ? 'day' : 'days'}</div>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Service Analytics Section */}
+        {!loading && activeTab === 'analytics' && analytics && (
+          <div className="space-y-6">
+            {/* Summary Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              <div className="bg-white rounded-lg shadow p-6">
+                <div className="text-sm font-medium text-gray-500">Total Spent ($)</div>
+                <div className="text-3xl font-bold text-red-600 mt-2">
+                  {analytics.summary?.total_usd_spent?.toLocaleString() || '0.00'}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">{getTimePeriodText()}</div>
+              </div>
+
+              <div className="bg-white rounded-lg shadow p-6">
+                <div className="text-sm font-medium text-gray-500">Total Added ($)</div>
+                <div className="text-3xl font-bold text-green-600 mt-2">
+                  {analytics.summary?.total_usd_topped_up?.toLocaleString() || '0.00'}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">{getTimePeriodText()}</div>
+              </div>
+
+              <div className="bg-white rounded-lg shadow p-6">
+                <div className="text-sm font-medium text-gray-500">Users with Usage</div>
+                <div className="text-3xl font-bold text-blue-600 mt-2">
+                  {analytics.summary?.users_with_usage || 0}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">{getTimePeriodText()}</div>
+              </div>
+
+              <div className="bg-white rounded-lg shadow p-6">
+                <div className="text-sm font-medium text-gray-500">Chatbot Avg ($)</div>
+                <div className="text-3xl font-bold text-purple-600 mt-2">
+                  {analytics.chatbotStats?.chatbot_avg_usd
+                    ? parseFloat(analytics.chatbotStats.chatbot_avg_usd).toFixed(2)
+                    : '0.00'}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">Per transaction</div>
+              </div>
+            </div>
+
+            {/* Time-Series Charts Row */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Chatbot Usage Over Time */}
+              <div className="bg-white rounded-lg shadow p-6">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">Chatbot Usage Over Time</h3>
+                {analytics.chatbotTimeSeries && analytics.chatbotTimeSeries.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <LineChart data={analytics.chatbotTimeSeries.map(item => ({
+                      ...item,
+                      date: formatChartDate(item.date)
+                    }))}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="date" angle={-45} textAnchor="end" height={80} />
+                      <YAxis yAxisId="left" />
+                      <YAxis yAxisId="right" orientation="right" />
+                      <Tooltip
+                        formatter={(value, name) => {
+                          if (name === 'Total Spent ($)') return `$${parseFloat(value).toFixed(2)}`;
+                          return value;
+                        }}
+                      />
+                      <Legend />
+                      <Line
+                        yAxisId="left"
+                        type="monotone"
+                        dataKey="transaction_count"
+                        stroke="#8b5cf6"
+                        strokeWidth={2}
+                        name="Transactions"
+                        dot={{ r: 4 }}
+                      />
+                      <Line
+                        yAxisId="left"
+                        type="monotone"
+                        dataKey="unique_users"
+                        stroke="#3b82f6"
+                        strokeWidth={2}
+                        name="Unique Users"
+                        dot={{ r: 4 }}
+                      />
+                      <Line
+                        yAxisId="right"
+                        type="monotone"
+                        dataKey="total_usd"
+                        stroke="#10b981"
+                        strokeWidth={2}
+                        name="Total Spent ($)"
+                        dot={{ r: 4 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-[300px] flex items-center justify-center text-gray-500">
+                    No chatbot usage data available
+                  </div>
+                )}
+              </div>
+
+              {/* File Generation Over Time */}
+              <div className="bg-white rounded-lg shadow p-6">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">File Generation Over Time</h3>
+                {analytics.serviceTimeSeries && analytics.serviceTimeSeries.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <LineChart data={analytics.serviceTimeSeries.map(item => ({
+                      ...item,
+                      date: formatChartDate(item.date)
+                    }))}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="date" angle={-45} textAnchor="end" height={80} />
+                      <YAxis yAxisId="left" />
+                      <YAxis yAxisId="right" orientation="right" />
+                      <Tooltip
+                        formatter={(value, name) => {
+                          if (name === 'Total Spent ($)') return `$${parseFloat(value).toFixed(2)}`;
+                          return value;
+                        }}
+                      />
+                      <Legend />
+                      <Line
+                        yAxisId="left"
+                        type="monotone"
+                        dataKey="transaction_count"
+                        stroke="#f59e0b"
+                        strokeWidth={2}
+                        name="Transactions"
+                        dot={{ r: 4 }}
+                      />
+                      <Line
+                        yAxisId="left"
+                        type="monotone"
+                        dataKey="unique_users"
+                        stroke="#3b82f6"
+                        strokeWidth={2}
+                        name="Unique Users"
+                        dot={{ r: 4 }}
+                      />
+                      <Line
+                        yAxisId="right"
+                        type="monotone"
+                        dataKey="total_usd"
+                        stroke="#10b981"
+                        strokeWidth={2}
+                        name="Total Spent ($)"
+                        dot={{ r: 4 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-[300px] flex items-center justify-center text-gray-500">
+                    No file generation data available
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Service Usage Table */}
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-200">
+                <h2 className="text-xl font-semibold text-gray-800">Detailed Service Usage</h2>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Service Type
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Description
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Transactions
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Unique Users
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Total ($)
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Avg ($)
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        % of Total
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {analytics.serviceUsage && analytics.serviceUsage.length > 0 ? (
+                      analytics.serviceUsage.map((service, index) => {
+                        const totalSpent = analytics.summary?.total_usd_spent || 1;
+                        const percentage = ((parseFloat(service.total_usd_spent) / totalSpent) * 100).toFixed(2);
+                        return (
+                          <tr key={index} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm font-medium text-gray-900">{service.txn_type}</div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="text-sm text-gray-500">{service.description}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-right">
+                              <div className="text-sm text-gray-900">{parseInt(service.transaction_count).toLocaleString()}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-right">
+                              <div className="text-sm text-gray-900">{parseInt(service.unique_users).toLocaleString()}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-right">
+                              <div className="text-sm font-semibold text-red-600">
+                                {parseFloat(service.total_usd_spent).toFixed(2)}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-right">
+                              <div className="text-sm text-gray-900">
+                                {parseFloat(service.avg_usd_per_transaction).toFixed(2)}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-right">
+                              <div className="text-sm font-medium text-blue-600">{percentage}%</div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
+                          No service usage data available
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* User Balance Table */}
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-200">
+                <h2 className="text-xl font-semibold text-gray-800">User Balance Summary</h2>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        User
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Company
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Balance ($)
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Spent ($)
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Topped Up ($)
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Transactions
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Last Transaction
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {analytics.userBalances && analytics.userBalances.length > 0 ? (
+                      analytics.userBalances
+                        .filter(user => parseInt(user.total_transactions) > 0)
+                        .map((user, index) => (
+                          <tr key={index} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm font-medium text-gray-900">
+                                {user.first_name} {user.last_name}
+                              </div>
+                              <div className="text-xs text-gray-500">{user.email}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-900">{user.company_name || 'N/A'}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-right">
+                              <div className={`text-sm font-bold ${
+                                parseFloat(user.balance_usd) > 100 ? 'text-green-600' :
+                                parseFloat(user.balance_usd) > 10 ? 'text-yellow-600' :
+                                'text-red-600'
+                              }`}>
+                                {parseFloat(user.balance_usd || 0).toFixed(2)}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-right">
+                              <div className="text-sm text-red-600">
+                                {parseFloat(user.total_usd_spent || 0).toFixed(2)}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-right">
+                              <div className="text-sm text-green-600">
+                                {parseFloat(user.total_usd_topped_up || 0).toFixed(2)}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-right">
+                              <div className="text-sm text-gray-900">{parseInt(user.total_transactions).toLocaleString()}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-500">{formatDate(user.last_transaction)}</div>
+                            </td>
+                          </tr>
+                        ))
+                    ) : (
+                      <tr>
+                        <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
+                          No user balance data available
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Top-up Analysis */}
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-200">
+                <h2 className="text-xl font-semibold text-gray-800">Top-up Analysis</h2>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Type
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Description
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Top-up Count
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Unique Users
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Total Added ($)
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Avg ($)
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {analytics.topUps && analytics.topUps.length > 0 ? (
+                      analytics.topUps.map((topup, index) => (
+                        <tr key={index} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-medium text-gray-900">{topup.txn_type}</div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="text-sm text-gray-500">{topup.description}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right">
+                            <div className="text-sm text-gray-900">{parseInt(topup.topup_count).toLocaleString()}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right">
+                            <div className="text-sm text-gray-900">{parseInt(topup.unique_users).toLocaleString()}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right">
+                            <div className="text-sm font-semibold text-green-600">
+                              {parseFloat(topup.total_usd_added).toFixed(2)}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right">
+                            <div className="text-sm text-gray-900">
+                              {parseFloat(topup.avg_usd_per_topup).toFixed(2)}
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="6" className="px-6 py-12 text-center text-gray-500">
+                          No top-up data available
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}

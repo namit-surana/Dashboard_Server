@@ -539,6 +539,157 @@ app.post('/api/initiate-webscrap', async (req, res) => {
   }
 });
 
+// Get service analytics data
+app.get('/api/service-analytics', async (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 30;
+    // If days is 0, show all time (no date filter)
+    const dateFilter = days > 0 ? `AND occurred_at >= NOW() - INTERVAL '${days} days'` : '';
+
+    // Service usage breakdown (deductions only) - Convert credits to USD (1 credit = $0.01)
+    const serviceUsageQuery = `
+      SELECT
+        txn_type,
+        description,
+        COUNT(*) as transaction_count,
+        COUNT(DISTINCT account_id) as unique_users,
+        ROUND(SUM(amount) / 100.0, 2) as total_usd_spent,
+        ROUND(AVG(amount) / 100.0, 2) as avg_usd_per_transaction,
+        ROUND(MIN(amount) / 100.0, 2) as min_usd,
+        ROUND(MAX(amount) / 100.0, 2) as max_usd
+      FROM account_transactions
+      WHERE db_cr_flag = 1
+        ${dateFilter}
+      GROUP BY txn_type, description
+      ORDER BY total_usd_spent DESC
+    `;
+    const serviceUsageResult = await pool.query(serviceUsageQuery);
+
+    // Top-up analysis - Convert credits to USD (1 credit = $0.01)
+    const topUpQuery = `
+      SELECT
+        txn_type,
+        description,
+        COUNT(*) as topup_count,
+        COUNT(DISTINCT account_id) as unique_users,
+        ROUND(SUM(amount) / 100.0, 2) as total_usd_added,
+        ROUND(AVG(amount) / 100.0, 2) as avg_usd_per_topup
+      FROM account_transactions
+      WHERE db_cr_flag = 2
+        ${dateFilter}
+      GROUP BY txn_type, description
+      ORDER BY total_usd_added DESC
+    `;
+    const topUpResult = await pool.query(topUpQuery);
+
+    // Overall summary - Convert credits to USD (1 credit = $0.01)
+    const summaryQuery = `
+      SELECT
+        ROUND(SUM(CASE WHEN db_cr_flag = 1 THEN amount ELSE 0 END) / 100.0, 2) as total_usd_spent,
+        ROUND(SUM(CASE WHEN db_cr_flag = 2 THEN amount ELSE 0 END) / 100.0, 2) as total_usd_topped_up,
+        COUNT(DISTINCT CASE WHEN db_cr_flag = 1 THEN account_id END) as users_with_usage,
+        COUNT(DISTINCT CASE WHEN db_cr_flag = 2 THEN account_id END) as users_with_topups,
+        COUNT(CASE WHEN db_cr_flag = 1 THEN 1 END) as total_usage_transactions,
+        COUNT(CASE WHEN db_cr_flag = 2 THEN 1 END) as total_topup_transactions
+      FROM account_transactions
+      ${days > 0 ? `WHERE occurred_at >= NOW() - INTERVAL '${days} days'` : ''}
+    `;
+    const summaryResult = await pool.query(summaryQuery);
+
+    // Chatbot specific stats - Convert credits to USD (1 credit = $0.01)
+    const chatbotStatsQuery = `
+      SELECT
+        COUNT(*) as chatbot_transaction_count,
+        COUNT(DISTINCT account_id) as chatbot_unique_users,
+        ROUND(SUM(amount) / 100.0, 2) as chatbot_total_usd,
+        ROUND(AVG(amount) / 100.0, 2) as chatbot_avg_usd,
+        ROUND(MIN(amount) / 100.0, 2) as chatbot_min_usd,
+        ROUND(MAX(amount) / 100.0, 2) as chatbot_max_usd
+      FROM account_transactions
+      WHERE txn_type = 'chatbot_service'
+        AND db_cr_flag = 1
+        ${dateFilter}
+    `;
+    const chatbotStatsResult = await pool.query(chatbotStatsQuery);
+
+    // User balance summary - Convert credits to USD (1 credit = $0.01)
+    const userBalanceQuery = `
+      SELECT
+        a.account_id,
+        u.email,
+        u.first_name,
+        u.last_name,
+        u.company_name,
+        ROUND(a.balance / 100.0, 2) as balance_usd,
+        a.currency,
+        a.status,
+        COUNT(at.txn_id) as total_transactions,
+        ROUND(SUM(CASE WHEN at.db_cr_flag = 1 THEN at.amount ELSE 0 END) / 100.0, 2) as total_usd_spent,
+        ROUND(SUM(CASE WHEN at.db_cr_flag = 2 THEN at.amount ELSE 0 END) / 100.0, 2) as total_usd_topped_up,
+        MAX(at.occurred_at) as last_transaction
+      FROM accounts a
+      LEFT JOIN users u ON a.user_id = u.user_id
+      LEFT JOIN account_transactions at ON a.account_id = at.account_id
+        ${days > 0 ? `AND at.occurred_at >= NOW() - INTERVAL '${days} days'` : ''}
+      GROUP BY a.account_id, u.email, u.first_name, u.last_name, u.company_name, a.balance, a.currency, a.status
+      ORDER BY a.balance DESC
+    `;
+    const userBalanceResult = await pool.query(userBalanceQuery);
+
+    // Daily time-series data for chatbot usage
+    const chatbotTimeSeriesQuery = `
+      SELECT
+        DATE(occurred_at) as date,
+        COUNT(*) as transaction_count,
+        COUNT(DISTINCT account_id) as unique_users,
+        ROUND(SUM(amount) / 100.0, 2) as total_usd
+      FROM account_transactions
+      WHERE txn_type = 'chatbot_service'
+        AND db_cr_flag = 1
+        ${dateFilter}
+      GROUP BY DATE(occurred_at)
+      ORDER BY date ASC
+    `;
+    const chatbotTimeSeriesResult = await pool.query(chatbotTimeSeriesQuery);
+
+    // Daily time-series data for service purchases (file generation)
+    const serviceTimeSeriesQuery = `
+      SELECT
+        DATE(occurred_at) as date,
+        COUNT(*) as transaction_count,
+        COUNT(DISTINCT account_id) as unique_users,
+        ROUND(SUM(amount) / 100.0, 2) as total_usd
+      FROM account_transactions
+      WHERE txn_type = 'service_purchase'
+        AND db_cr_flag = 1
+        ${dateFilter}
+      GROUP BY DATE(occurred_at)
+      ORDER BY date ASC
+    `;
+    const serviceTimeSeriesResult = await pool.query(serviceTimeSeriesQuery);
+
+    res.json({
+      success: true,
+      data: {
+        serviceUsage: serviceUsageResult.rows,
+        topUps: topUpResult.rows,
+        summary: summaryResult.rows[0],
+        chatbotStats: chatbotStatsResult.rows[0],
+        userBalances: userBalanceResult.rows,
+        chatbotTimeSeries: chatbotTimeSeriesResult.rows,
+        serviceTimeSeries: serviceTimeSeriesResult.rows,
+        period: days === 0 ? 'All Time' : `${days} days`
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching service analytics:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch service analytics'
+    });
+  }
+});
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ success: true, message: 'Server is running' });
