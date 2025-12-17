@@ -183,7 +183,7 @@ app.get('/api/active-users-timeline', async (req, res) => {
         DATE(occurred_at) as date,
         COUNT(DISTINCT account_id) as active_users
       FROM account_transactions
-      WHERE txn_type = 'chatbot_service'
+      WHERE txn_type = 'chatbot'
         AND db_cr_flag = 1
         ${dateFilter}
       GROUP BY DATE(occurred_at)
@@ -599,38 +599,103 @@ app.post('/api/initiate-webscrap', async (req, res) => {
 app.get('/api/usage-timeline', async (req, res) => {
   try {
     const days = parseInt(req.query.days) || 30;
-    const dateFilter = days > 0 ? `AND occurred_at >= NOW() - INTERVAL '${days} days'` : '';
 
-    // Chatbot usage over time
-    const chatbotUsageQuery = `
-      SELECT
-        DATE(occurred_at) as date,
-        COUNT(*) as transaction_count,
-        COUNT(DISTINCT account_id) as unique_users,
-        ROUND(SUM(amount) / 100.0, 2) as total_usd
-      FROM account_transactions
-      WHERE txn_type = 'chatbot_service'
-        AND db_cr_flag = 1
-        ${dateFilter}
-      GROUP BY DATE(occurred_at)
-      ORDER BY date ASC
-    `;
+    // Generate complete date range with zeros for missing dates
+    let chatbotUsageQuery, fileGenUsageQuery;
+
+    if (days === 0) {
+      // For "All Time", get the date range from first to last transaction
+      chatbotUsageQuery = `
+        WITH date_range AS (
+          SELECT generate_series(
+            (SELECT MIN(DATE(occurred_at)) FROM account_transactions WHERE txn_type = 'chatbot' AND db_cr_flag = 1),
+            CURRENT_DATE,
+            '1 day'::interval
+          )::date AS date
+        )
+        SELECT
+          dr.date,
+          COALESCE(COUNT(at.txn_id), 0) as transaction_count,
+          COALESCE(COUNT(DISTINCT at.account_id), 0) as unique_users,
+          COALESCE(ROUND(SUM(at.amount) / 100.0, 2), 0.00) as total_usd
+        FROM date_range dr
+        LEFT JOIN account_transactions at
+          ON DATE(at.occurred_at) = dr.date
+          AND at.txn_type = 'chatbot'
+          AND at.db_cr_flag = 1
+        GROUP BY dr.date
+        ORDER BY dr.date ASC
+      `;
+
+      fileGenUsageQuery = `
+        WITH date_range AS (
+          SELECT generate_series(
+            (SELECT MIN(DATE(occurred_at)) FROM account_transactions WHERE txn_type IN ('file_gen', 'service_purchase') AND db_cr_flag = 1),
+            CURRENT_DATE,
+            '1 day'::interval
+          )::date AS date
+        )
+        SELECT
+          dr.date,
+          COALESCE(COUNT(at.txn_id), 0) as transaction_count,
+          COALESCE(COUNT(DISTINCT at.account_id), 0) as unique_users,
+          COALESCE(ROUND(SUM(at.amount) / 100.0, 2), 0.00) as total_usd
+        FROM date_range dr
+        LEFT JOIN account_transactions at
+          ON DATE(at.occurred_at) = dr.date
+          AND at.txn_type IN ('file_gen', 'service_purchase')
+          AND at.db_cr_flag = 1
+        GROUP BY dr.date
+        ORDER BY dr.date ASC
+      `;
+    } else {
+      // For specific time periods, generate date range from N days ago to today
+      chatbotUsageQuery = `
+        WITH date_range AS (
+          SELECT generate_series(
+            CURRENT_DATE - INTERVAL '${days} days',
+            CURRENT_DATE,
+            '1 day'::interval
+          )::date AS date
+        )
+        SELECT
+          dr.date,
+          COALESCE(COUNT(at.txn_id), 0) as transaction_count,
+          COALESCE(COUNT(DISTINCT at.account_id), 0) as unique_users,
+          COALESCE(ROUND(SUM(at.amount) / 100.0, 2), 0.00) as total_usd
+        FROM date_range dr
+        LEFT JOIN account_transactions at
+          ON DATE(at.occurred_at) = dr.date
+          AND at.txn_type = 'chatbot'
+          AND at.db_cr_flag = 1
+        GROUP BY dr.date
+        ORDER BY dr.date ASC
+      `;
+
+      fileGenUsageQuery = `
+        WITH date_range AS (
+          SELECT generate_series(
+            CURRENT_DATE - INTERVAL '${days} days',
+            CURRENT_DATE,
+            '1 day'::interval
+          )::date AS date
+        )
+        SELECT
+          dr.date,
+          COALESCE(COUNT(at.txn_id), 0) as transaction_count,
+          COALESCE(COUNT(DISTINCT at.account_id), 0) as unique_users,
+          COALESCE(ROUND(SUM(at.amount) / 100.0, 2), 0.00) as total_usd
+        FROM date_range dr
+        LEFT JOIN account_transactions at
+          ON DATE(at.occurred_at) = dr.date
+          AND at.txn_type IN ('file_gen', 'service_purchase')
+          AND at.db_cr_flag = 1
+        GROUP BY dr.date
+        ORDER BY dr.date ASC
+      `;
+    }
+
     const chatbotUsageResult = await pool.query(chatbotUsageQuery);
-
-    // File generation usage over time (including both file_gen and service_purchase)
-    const fileGenUsageQuery = `
-      SELECT
-        DATE(occurred_at) as date,
-        COUNT(*) as transaction_count,
-        COUNT(DISTINCT account_id) as unique_users,
-        ROUND(SUM(amount) / 100.0, 2) as total_usd
-      FROM account_transactions
-      WHERE txn_type IN ('file_gen', 'service_purchase')
-        AND db_cr_flag = 1
-        ${dateFilter}
-      GROUP BY DATE(occurred_at)
-      ORDER BY date ASC
-    `;
     const fileGenUsageResult = await pool.query(fileGenUsageQuery);
 
     console.log('📊 Usage Timeline - Chatbot:', chatbotUsageResult.rows.length, 'data points');
@@ -678,20 +743,21 @@ app.get('/api/service-analytics', async (req, res) => {
     `;
     const serviceUsageResult = await pool.query(serviceUsageQuery);
 
-    // Top-up analysis - Convert credits to USD (1 credit = $0.01)
+    // Individual top-up transactions log
     const topUpQuery = `
       SELECT
-        txn_type,
-        description,
-        COUNT(*) as topup_count,
-        COUNT(DISTINCT account_id) as unique_users,
-        ROUND(SUM(amount) / 100.0, 2) as total_usd_added,
-        ROUND(AVG(amount) / 100.0, 2) as avg_usd_per_topup
-      FROM account_transactions
-      WHERE db_cr_flag = 2
+        at.occurred_at as date_time,
+        u.first_name,
+        u.last_name,
+        u.company_name,
+        ROUND(at.amount / 100.0, 2) as amount_usd,
+        at.txn_type
+      FROM account_transactions at
+      JOIN accounts a ON at.account_id = a.account_id
+      JOIN users u ON a.user_id = u.user_id
+      WHERE at.db_cr_flag = 2
         ${dateFilter}
-      GROUP BY txn_type, description
-      ORDER BY total_usd_added DESC
+      ORDER BY at.occurred_at DESC
     `;
     const topUpResult = await pool.query(topUpQuery);
 
@@ -719,7 +785,7 @@ app.get('/api/service-analytics', async (req, res) => {
         ROUND(MIN(amount) / 100.0, 2) as chatbot_min_usd,
         ROUND(MAX(amount) / 100.0, 2) as chatbot_max_usd
       FROM account_transactions
-      WHERE txn_type = 'chatbot_service'
+      WHERE txn_type = 'chatbot'
         AND db_cr_flag = 1
         ${dateFilter}
     `;

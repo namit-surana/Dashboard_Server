@@ -1345,32 +1345,32 @@ function App() {
               </div>
             </div>
 
-            {/* Top-up Analysis */}
+            {/* Top-up Transactions */}
             <div className="bg-white rounded-lg shadow overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-200">
-                <h2 className="text-xl font-semibold text-gray-800">Top-up Analysis</h2>
+                <h2 className="text-xl font-semibold text-gray-800">Top-up Transactions</h2>
               </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Type
+                        Date/Time
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Description
+                        First Name
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Last Name
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Company
                       </th>
                       <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Top-up Count
+                        Amount ($)
                       </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Unique Users
-                      </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Total Added ($)
-                      </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Avg ($)
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Transaction Type
                       </th>
                     </tr>
                   </thead>
@@ -1379,33 +1379,39 @@ function App() {
                       analytics.topUps.map((topup, index) => (
                         <tr key={index} className="hover:bg-gray-50">
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm font-medium text-gray-900">{topup.txn_type}</div>
+                            <div className="text-sm text-gray-900">
+                              {new Date(topup.date_time).toLocaleString('en-US', {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </div>
                           </td>
-                          <td className="px-6 py-4">
-                            <div className="text-sm text-gray-500">{topup.description}</div>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-900">{topup.first_name}</div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-right">
-                            <div className="text-sm text-gray-900">{parseInt(topup.topup_count).toLocaleString()}</div>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-900">{topup.last_name}</div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-right">
-                            <div className="text-sm text-gray-900">{parseInt(topup.unique_users).toLocaleString()}</div>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-500">{topup.company_name || '-'}</div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-right">
                             <div className="text-sm font-semibold text-green-600">
-                              {parseFloat(topup.total_usd_added).toFixed(2)}
+                              ${parseFloat(topup.amount_usd).toFixed(2)}
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-right">
-                            <div className="text-sm text-gray-900">
-                              {parseFloat(topup.avg_usd_per_topup).toFixed(2)}
-                            </div>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-900">{topup.txn_type}</div>
                           </td>
                         </tr>
                       ))
                     ) : (
                       <tr>
                         <td colSpan="6" className="px-6 py-12 text-center text-gray-500">
-                          No top-up data available
+                          No top-up transactions available
                         </td>
                       </tr>
                     )}
