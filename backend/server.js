@@ -718,6 +718,105 @@ app.get('/api/usage-timeline', async (req, res) => {
   }
 });
 
+// Get reasoning mode analytics (text-low vs text-minimal)
+app.get('/api/reasoning-mode-analytics', async (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 30;
+    const dateFilter = days > 0 ? `AND timestamp >= NOW() - INTERVAL '${days} days'` : '';
+
+    // Overall reasoning mode statistics
+    const summaryQuery = `
+      SELECT
+        SUM(CASE WHEN type = 'text-low' THEN 1 ELSE 0 END) as reasoning_count,
+        SUM(CASE WHEN type = 'text-minimal' THEN 1 ELSE 0 END) as non_reasoning_count,
+        COUNT(*) as total_messages,
+        ROUND(100.0 * SUM(CASE WHEN type = 'text-low' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) as reasoning_percentage,
+        ROUND(100.0 * SUM(CASE WHEN type = 'text-minimal' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) as non_reasoning_percentage
+      FROM chat_messages
+      WHERE role = 'assistant'
+        AND type IN ('text-low', 'text-minimal')
+        ${dateFilter}
+    `;
+    const summaryResult = await pool.query(summaryQuery);
+
+    // Daily timeline with complete date range
+    let timelineQuery;
+    if (days === 0) {
+      timelineQuery = `
+        WITH date_range AS (
+          SELECT generate_series(
+            (SELECT MIN(DATE(timestamp)) FROM chat_messages WHERE type IN ('text-low', 'text-minimal') AND role = 'assistant'),
+            CURRENT_DATE,
+            '1 day'::interval
+          )::date AS date
+        )
+        SELECT
+          dr.date,
+          COALESCE(SUM(CASE WHEN cm.type = 'text-low' THEN 1 ELSE 0 END), 0) as reasoning_count,
+          COALESCE(SUM(CASE WHEN cm.type = 'text-minimal' THEN 1 ELSE 0 END), 0) as non_reasoning_count,
+          COALESCE(COUNT(cm.message_id), 0) as total_messages,
+          CASE
+            WHEN COUNT(cm.message_id) > 0 THEN
+              ROUND(100.0 * SUM(CASE WHEN cm.type = 'text-low' THEN 1 ELSE 0 END) / COUNT(cm.message_id), 2)
+            ELSE 0
+          END as reasoning_percentage
+        FROM date_range dr
+        LEFT JOIN chat_messages cm
+          ON DATE(cm.timestamp) = dr.date
+          AND cm.role = 'assistant'
+          AND cm.type IN ('text-low', 'text-minimal')
+        GROUP BY dr.date
+        ORDER BY dr.date ASC
+      `;
+    } else {
+      timelineQuery = `
+        WITH date_range AS (
+          SELECT generate_series(
+            CURRENT_DATE - INTERVAL '${days} days',
+            CURRENT_DATE,
+            '1 day'::interval
+          )::date AS date
+        )
+        SELECT
+          dr.date,
+          COALESCE(SUM(CASE WHEN cm.type = 'text-low' THEN 1 ELSE 0 END), 0) as reasoning_count,
+          COALESCE(SUM(CASE WHEN cm.type = 'text-minimal' THEN 1 ELSE 0 END), 0) as non_reasoning_count,
+          COALESCE(COUNT(cm.message_id), 0) as total_messages,
+          CASE
+            WHEN COUNT(cm.message_id) > 0 THEN
+              ROUND(100.0 * SUM(CASE WHEN cm.type = 'text-low' THEN 1 ELSE 0 END) / COUNT(cm.message_id), 2)
+            ELSE 0
+          END as reasoning_percentage
+        FROM date_range dr
+        LEFT JOIN chat_messages cm
+          ON DATE(cm.timestamp) = dr.date
+          AND cm.role = 'assistant'
+          AND cm.type IN ('text-low', 'text-minimal')
+        GROUP BY dr.date
+        ORDER BY dr.date ASC
+      `;
+    }
+    const timelineResult = await pool.query(timelineQuery);
+
+    console.log('🧠 Reasoning Mode Analytics - Timeline:', timelineResult.rows.length, 'data points');
+
+    res.json({
+      success: true,
+      data: {
+        summary: summaryResult.rows[0],
+        timeline: timelineResult.rows,
+        period: days === 0 ? 'All Time' : `${days} days`
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching reasoning mode analytics:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch reasoning mode analytics'
+    });
+  }
+});
+
 // Get service analytics data
 app.get('/api/service-analytics', async (req, res) => {
   try {
