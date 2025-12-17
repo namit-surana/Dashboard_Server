@@ -604,14 +604,14 @@ app.get('/api/usage-timeline', async (req, res) => {
     const days = req.query.days !== undefined ? parseInt(req.query.days) : 30;
 
     // Generate complete date range with zeros for missing dates
-    let chatbotUsageQuery, fileGenUsageQuery;
+    let chatbotUsageQuery, fileGenUsageQuery, usAgentUsageQuery;
 
     if (days === 0) {
-      // For "All Time", get the date range from first to last transaction
+      // For "All Time", get the date range from first chat message to today
       chatbotUsageQuery = `
         WITH date_range AS (
           SELECT generate_series(
-            (SELECT MIN(DATE(occurred_at)) FROM account_transactions WHERE txn_type = 'chatbot' AND db_cr_flag = 1),
+            (SELECT MIN(DATE(timestamp)) FROM chat_messages),
             CURRENT_DATE,
             '1 day'::interval
           )::date AS date
@@ -633,7 +633,7 @@ app.get('/api/usage-timeline', async (req, res) => {
       fileGenUsageQuery = `
         WITH date_range AS (
           SELECT generate_series(
-            (SELECT MIN(DATE(occurred_at)) FROM account_transactions WHERE txn_type IN ('file_gen', 'service_purchase') AND db_cr_flag = 1),
+            (SELECT MIN(DATE(timestamp)) FROM chat_messages),
             CURRENT_DATE,
             '1 day'::interval
           )::date AS date
@@ -647,6 +647,28 @@ app.get('/api/usage-timeline', async (req, res) => {
         LEFT JOIN account_transactions at
           ON DATE(at.occurred_at) = dr.date
           AND at.txn_type IN ('file_gen', 'service_purchase')
+          AND at.db_cr_flag = 1
+        GROUP BY dr.date
+        ORDER BY dr.date ASC
+      `;
+
+      usAgentUsageQuery = `
+        WITH date_range AS (
+          SELECT generate_series(
+            (SELECT MIN(DATE(timestamp)) FROM chat_messages),
+            CURRENT_DATE,
+            '1 day'::interval
+          )::date AS date
+        )
+        SELECT
+          dr.date,
+          COALESCE(COUNT(at.txn_id), 0) as transaction_count,
+          COALESCE(COUNT(DISTINCT at.account_id), 0) as unique_users,
+          COALESCE(ROUND(SUM(at.amount) / 100.0, 2), 0.00) as total_usd
+        FROM date_range dr
+        LEFT JOIN account_transactions at
+          ON DATE(at.occurred_at) = dr.date
+          AND at.txn_type = 'us_agent'
           AND at.db_cr_flag = 1
         GROUP BY dr.date
         ORDER BY dr.date ASC
@@ -696,19 +718,44 @@ app.get('/api/usage-timeline', async (req, res) => {
         GROUP BY dr.date
         ORDER BY dr.date ASC
       `;
+
+      usAgentUsageQuery = `
+        WITH date_range AS (
+          SELECT generate_series(
+            CURRENT_DATE - INTERVAL '${days} days',
+            CURRENT_DATE,
+            '1 day'::interval
+          )::date AS date
+        )
+        SELECT
+          dr.date,
+          COALESCE(COUNT(at.txn_id), 0) as transaction_count,
+          COALESCE(COUNT(DISTINCT at.account_id), 0) as unique_users,
+          COALESCE(ROUND(SUM(at.amount) / 100.0, 2), 0.00) as total_usd
+        FROM date_range dr
+        LEFT JOIN account_transactions at
+          ON DATE(at.occurred_at) = dr.date
+          AND at.txn_type = 'us_agent'
+          AND at.db_cr_flag = 1
+        GROUP BY dr.date
+        ORDER BY dr.date ASC
+      `;
     }
 
     const chatbotUsageResult = await pool.query(chatbotUsageQuery);
     const fileGenUsageResult = await pool.query(fileGenUsageQuery);
+    const usAgentUsageResult = await pool.query(usAgentUsageQuery);
 
     console.log('📊 Usage Timeline - Chatbot:', chatbotUsageResult.rows.length, 'data points');
     console.log('📊 Usage Timeline - FileGen:', fileGenUsageResult.rows.length, 'data points');
+    console.log('📊 Usage Timeline - US Agent:', usAgentUsageResult.rows.length, 'data points');
 
     res.json({
       success: true,
       data: {
         chatbotUsage: chatbotUsageResult.rows,
         fileGenUsage: fileGenUsageResult.rows,
+        usAgentUsage: usAgentUsageResult.rows,
         period: days === 0 ? 'All Time' : `${days} days`
       }
     });
@@ -748,7 +795,7 @@ app.get('/api/reasoning-mode-analytics', async (req, res) => {
       timelineQuery = `
         WITH date_range AS (
           SELECT generate_series(
-            (SELECT MIN(DATE(timestamp)) FROM chat_messages WHERE type IN ('text-low', 'text-minimal') AND role = 'assistant'),
+            (SELECT MIN(DATE(timestamp)) FROM chat_messages),
             CURRENT_DATE,
             '1 day'::interval
           )::date AS date
