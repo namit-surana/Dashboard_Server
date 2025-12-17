@@ -23,7 +23,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Get active users based on time period (days)
 app.get('/api/active-users', async (req, res) => {
   try {
-    const days = parseInt(req.query.days) || 30;
+    const days = req.query.days !== undefined ? parseInt(req.query.days) : 30;
+    const dateFilter = days > 0 ? `>= NOW() - INTERVAL '${days} days'` : `IS NOT NULL`;
 
     const query = `
       SELECT DISTINCT
@@ -37,14 +38,14 @@ app.get('/api/active-users', async (req, res) => {
           MAX(cs.updated_at),
           MAX(cm.timestamp)
         ) as last_activity,
-        COUNT(DISTINCT cm.message_id) FILTER (WHERE cm.timestamp >= NOW() - INTERVAL '${days} days') as message_count
+        COUNT(DISTINCT cm.message_id) FILTER (WHERE cm.timestamp ${dateFilter}) as message_count
       FROM users u
       LEFT JOIN chat_sessions cs ON u.user_id = cs.user_id
       LEFT JOIN chat_messages cm ON cs.session_id = cm.session_id
       WHERE
-        cs.created_at >= NOW() - INTERVAL '${days} days'
-        OR cs.updated_at >= NOW() - INTERVAL '${days} days'
-        OR cm.timestamp >= NOW() - INTERVAL '${days} days'
+        cs.created_at ${dateFilter}
+        OR cs.updated_at ${dateFilter}
+        OR cm.timestamp ${dateFilter}
       GROUP BY u.user_id, u.email, u.company_name, u.first_name, u.last_name
       ORDER BY last_activity DESC;
     `;
@@ -67,7 +68,8 @@ app.get('/api/active-users', async (req, res) => {
 // Get dashboard statistics
 app.get('/api/stats', async (req, res) => {
   try {
-    const days = parseInt(req.query.days) || 30;
+    const days = req.query.days !== undefined ? parseInt(req.query.days) : 30;
+    const dateFilter = days > 0 ? `>= NOW() - INTERVAL '${days} days'` : `IS NOT NULL`;
 
     // Total users
     const totalUsersQuery = 'SELECT COUNT(*) as total FROM users';
@@ -77,7 +79,7 @@ app.get('/api/stats', async (req, res) => {
     const activeSessionsQuery = `
       SELECT COUNT(*) as total
       FROM chat_sessions
-      WHERE created_at >= NOW() - INTERVAL '${days} days'
+      WHERE created_at ${dateFilter}
     `;
     const activeSessionsResult = await pool.query(activeSessionsQuery);
 
@@ -85,7 +87,7 @@ app.get('/api/stats', async (req, res) => {
     const totalMessagesQuery = `
       SELECT COUNT(*) as total
       FROM chat_messages
-      WHERE timestamp >= NOW() - INTERVAL '${days} days'
+      WHERE timestamp ${dateFilter}
     `;
     const totalMessagesResult = await pool.query(totalMessagesQuery);
 
@@ -93,7 +95,7 @@ app.get('/api/stats', async (req, res) => {
     const messageTypeCountsQuery = `
       SELECT type, COUNT(*) as count
       FROM chat_messages
-      WHERE timestamp >= NOW() - INTERVAL '${days} days'
+      WHERE timestamp ${dateFilter}
         AND type IN ('text-low', 'text-minimal')
       GROUP BY type
     `;
@@ -106,9 +108,9 @@ app.get('/api/stats', async (req, res) => {
       LEFT JOIN chat_sessions cs ON u.user_id = cs.user_id
       LEFT JOIN chat_messages cm ON cs.session_id = cm.session_id
       WHERE
-        cs.created_at >= NOW() - INTERVAL '${days} days'
-        OR cs.updated_at >= NOW() - INTERVAL '${days} days'
-        OR cm.timestamp >= NOW() - INTERVAL '${days} days'
+        cs.created_at ${dateFilter}
+        OR cs.updated_at ${dateFilter}
+        OR cm.timestamp ${dateFilter}
     `;
     const activeUsersResult = await pool.query(activeUsersQuery);
 
@@ -116,14 +118,14 @@ app.get('/api/stats', async (req, res) => {
     const totalFeedbackQuery = `
       SELECT COUNT(*) as total
       FROM chat_feedbacks
-      WHERE timestamp >= NOW() - INTERVAL '${days} days'
+      WHERE timestamp ${dateFilter}
     `;
     const totalFeedbackResult = await pool.query(totalFeedbackQuery);
 
     const positiveFeedbackQuery = `
       SELECT COUNT(*) as total
       FROM chat_feedbacks
-      WHERE timestamp >= NOW() - INTERVAL '${days} days'
+      WHERE timestamp ${dateFilter}
         AND is_positive = true
     `;
     const positiveFeedbackResult = await pool.query(positiveFeedbackQuery);
@@ -131,7 +133,7 @@ app.get('/api/stats', async (req, res) => {
     const negativeFeedbackQuery = `
       SELECT COUNT(*) as total
       FROM chat_feedbacks
-      WHERE timestamp >= NOW() - INTERVAL '${days} days'
+      WHERE timestamp ${dateFilter}
         AND is_positive = false
     `;
     const negativeFeedbackResult = await pool.query(negativeFeedbackQuery);
@@ -174,7 +176,7 @@ app.get('/api/stats', async (req, res) => {
 // Get active users over time
 app.get('/api/active-users-timeline', async (req, res) => {
   try {
-    const days = parseInt(req.query.days) || 30;
+    const days = req.query.days !== undefined ? parseInt(req.query.days) : 30;
     const dateFilter = days > 0 ? `AND occurred_at >= NOW() - INTERVAL '${days} days'` : '';
 
     // Active users over time for chatbot service
@@ -230,8 +232,9 @@ app.get('/api/active-users-timeline', async (req, res) => {
 // Get feedback list with user details
 app.get('/api/feedbacks', async (req, res) => {
   try {
-    const days = parseInt(req.query.days) || 30;
+    const days = req.query.days !== undefined ? parseInt(req.query.days) : 30;
     const type = req.query.type || 'all'; // all, positive, negative
+    const dateFilter = days > 0 ? `cf.timestamp >= NOW() - INTERVAL '${days} days'` : '1=1';
 
     let typeFilter = '';
     if (type === 'positive') {
@@ -256,7 +259,7 @@ app.get('/api/feedbacks', async (req, res) => {
       JOIN chat_messages cm ON cf.message_id = cm.message_id
       JOIN chat_sessions cs ON cm.session_id = cs.session_id
       JOIN users u ON cs.user_id = u.user_id
-      WHERE cf.timestamp >= NOW() - INTERVAL '${days} days'
+      WHERE ${dateFilter}
         ${typeFilter}
       ORDER BY cf.timestamp DESC
     `;
@@ -598,7 +601,7 @@ app.post('/api/initiate-webscrap', async (req, res) => {
 // Get usage timeline for graphs (chatbot and file generation)
 app.get('/api/usage-timeline', async (req, res) => {
   try {
-    const days = parseInt(req.query.days) || 30;
+    const days = req.query.days !== undefined ? parseInt(req.query.days) : 30;
 
     // Generate complete date range with zeros for missing dates
     let chatbotUsageQuery, fileGenUsageQuery;
@@ -721,7 +724,7 @@ app.get('/api/usage-timeline', async (req, res) => {
 // Get reasoning mode analytics (text-low vs text-minimal)
 app.get('/api/reasoning-mode-analytics', async (req, res) => {
   try {
-    const days = parseInt(req.query.days) || 30;
+    const days = req.query.days !== undefined ? parseInt(req.query.days) : 30;
     const dateFilter = days > 0 ? `AND timestamp >= NOW() - INTERVAL '${days} days'` : '';
 
     // Overall reasoning mode statistics
@@ -820,7 +823,7 @@ app.get('/api/reasoning-mode-analytics', async (req, res) => {
 // Get service analytics data
 app.get('/api/service-analytics', async (req, res) => {
   try {
-    const days = parseInt(req.query.days) || 30;
+    const days = req.query.days !== undefined ? parseInt(req.query.days) : 30;
     // If days is 0, show all time (no date filter)
     const dateFilter = days > 0 ? `AND occurred_at >= NOW() - INTERVAL '${days} days'` : '';
 

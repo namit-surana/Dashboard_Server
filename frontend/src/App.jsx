@@ -626,6 +626,8 @@ function App() {
                 </div>
               </div>
             )}
+          </div>
+        )}
 
         {/* Compliance Queue Section */}
         {!loading && activeTab === 'compliance' && (
@@ -906,6 +908,8 @@ function App() {
           </div>
         )}
 
+        {!loading && activeTab === 'chatbot' && (
+          <div className="space-y-6">
             {/* Feedback Section */}
           <div>
             <div className="bg-white rounded-lg shadow overflow-hidden">
