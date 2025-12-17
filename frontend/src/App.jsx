@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 // Always use relative URL since backend serves frontend
 const API_URL = '/api';
@@ -9,6 +10,7 @@ function App() {
   const [complianceQueue, setComplianceQueue] = useState([]);
   const [stats, setStats] = useState(null);
   const [analytics, setAnalytics] = useState(null);
+  const [usageTimeline, setUsageTimeline] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [timePeriod, setTimePeriod] = useState(30);
@@ -52,12 +54,17 @@ function App() {
       const analyticsResponse = await fetch(`${API_URL}/service-analytics?days=${timePeriod}`);
       const analyticsData = await analyticsResponse.json();
 
-      if (usersData.success && statsData.success && feedbacksData.success && complianceData.success && analyticsData.success) {
+      // Fetch usage timeline for graphs
+      const timelineResponse = await fetch(`${API_URL}/usage-timeline?days=${timePeriod}`);
+      const timelineData = await timelineResponse.json();
+
+      if (usersData.success && statsData.success && feedbacksData.success && complianceData.success && analyticsData.success && timelineData.success) {
         setActiveUsers(usersData.data);
         setStats(statsData.data);
         setFeedbacks(feedbacksData.data);
         setComplianceQueue(complianceData.data);
         setAnalytics(analyticsData.data);
+        setUsageTimeline(timelineData.data);
       } else {
         setError('Failed to fetch data');
       }
@@ -994,6 +1001,131 @@ function App() {
               </div>
             </div>
 
+            {/* Usage Timeline Graphs */}
+            {usageTimeline && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                {/* Chatbot Usage Over Time */}
+                <div className="bg-white rounded-lg shadow p-6">
+                  <h3 className="text-lg font-semibold text-gray-800 mb-4">
+                    Chatbot Usage Over Time
+                  </h3>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <LineChart data={usageTimeline.chatbotUsage}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis
+                        dataKey="date"
+                        tick={{ fontSize: 12 }}
+                        tickFormatter={(value) => {
+                          const date = new Date(value);
+                          return `${date.getMonth() + 1}/${date.getDate()}`;
+                        }}
+                      />
+                      <YAxis tick={{ fontSize: 12 }} />
+                      <Tooltip
+                        formatter={(value, name) => {
+                          if (name === 'transaction_count') return [value, 'Transactions'];
+                          if (name === 'unique_users') return [value, 'Unique Users'];
+                          if (name === 'total_usd') return [`$${value}`, 'Total Cost'];
+                          return [value, name];
+                        }}
+                        labelFormatter={(label) => {
+                          const date = new Date(label);
+                          return date.toLocaleDateString();
+                        }}
+                      />
+                      <Legend
+                        formatter={(value) => {
+                          if (value === 'transaction_count') return 'Transactions';
+                          if (value === 'unique_users') return 'Unique Users';
+                          if (value === 'total_usd') return 'Total Cost ($)';
+                          return value;
+                        }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="transaction_count"
+                        stroke="#8b5cf6"
+                        strokeWidth={2}
+                        dot={{ fill: '#8b5cf6', r: 3 }}
+                        activeDot={{ r: 5 }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="total_usd"
+                        stroke="#10b981"
+                        strokeWidth={2}
+                        dot={{ fill: '#10b981', r: 3 }}
+                        activeDot={{ r: 5 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                  <div className="mt-4 text-sm text-gray-500 text-center">
+                    Showing {usageTimeline.chatbotUsage.length} data points for {usageTimeline.period}
+                  </div>
+                </div>
+
+                {/* File Generation Over Time */}
+                <div className="bg-white rounded-lg shadow p-6">
+                  <h3 className="text-lg font-semibold text-gray-800 mb-4">
+                    File Generation Over Time
+                  </h3>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <LineChart data={usageTimeline.fileGenUsage}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis
+                        dataKey="date"
+                        tick={{ fontSize: 12 }}
+                        tickFormatter={(value) => {
+                          const date = new Date(value);
+                          return `${date.getMonth() + 1}/${date.getDate()}`;
+                        }}
+                      />
+                      <YAxis tick={{ fontSize: 12 }} />
+                      <Tooltip
+                        formatter={(value, name) => {
+                          if (name === 'transaction_count') return [value, 'Transactions'];
+                          if (name === 'unique_users') return [value, 'Unique Users'];
+                          if (name === 'total_usd') return [`$${value}`, 'Total Cost'];
+                          return [value, name];
+                        }}
+                        labelFormatter={(label) => {
+                          const date = new Date(label);
+                          return date.toLocaleDateString();
+                        }}
+                      />
+                      <Legend
+                        formatter={(value) => {
+                          if (value === 'transaction_count') return 'Transactions';
+                          if (value === 'unique_users') return 'Unique Users';
+                          if (value === 'total_usd') return 'Total Cost ($)';
+                          return value;
+                        }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="transaction_count"
+                        stroke="#8b5cf6"
+                        strokeWidth={2}
+                        dot={{ fill: '#8b5cf6', r: 3 }}
+                        activeDot={{ r: 5 }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="total_usd"
+                        stroke="#10b981"
+                        strokeWidth={2}
+                        dot={{ fill: '#10b981', r: 3 }}
+                        activeDot={{ r: 5 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                  <div className="mt-4 text-sm text-gray-500 text-center">
+                    Showing {usageTimeline.fileGenUsage.length} data points for {usageTimeline.period}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Service Usage Table */}
             <div className="bg-white rounded-lg shadow overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-200">
@@ -1005,9 +1137,6 @@ function App() {
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Service Type
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Description
                       </th>
                       <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Transactions
@@ -1036,9 +1165,6 @@ function App() {
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="text-sm font-medium text-gray-900">{service.txn_type}</div>
                             </td>
-                            <td className="px-6 py-4">
-                              <div className="text-sm text-gray-500">{service.description}</div>
-                            </td>
                             <td className="px-6 py-4 whitespace-nowrap text-right">
                               <div className="text-sm text-gray-900">{parseInt(service.transaction_count).toLocaleString()}</div>
                             </td>
@@ -1063,7 +1189,7 @@ function App() {
                       })
                     ) : (
                       <tr>
-                        <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
+                        <td colSpan="6" className="px-6 py-12 text-center text-gray-500">
                           No service usage data available
                         </td>
                       </tr>
